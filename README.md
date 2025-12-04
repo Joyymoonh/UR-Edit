@@ -50,18 +50,18 @@ pip install "numpy==1.26"
 请确保以下模型文件已下载并放置在正确位置。
 
 ### 2.1 SAM3 模型
-- **路径**: `SAM3-Video-Editor/pretrained_models/sam3/sam3.pt`
+- **路径**: `./pretrained_models/sam3/sam3.pt`
 - **来源**: 请从 SAM3 官方仓库或 HuggingFace 下载。
 
 ### 2.2 Instruct-Pix2Pix 模型 (Diffusers 格式)
 本项目使用 Diffusers 格式加载模型以支持离线和分布式运行。
-- **路径**: `SAM3-Video-Editor/instruct-pix2pix/diffusers_model`
+- **路径**: `./instruct-pix2pix/diffusers_model`
 - **获取方式**:
   如果您只有 `.ckpt` 文件，请使用根目录下的转换脚本：
   ```bash
-  python convert_ckpt.py \
+  python scripts/convert_ckpt.py \
     --checkpoint_path /path/to/instruct-pix2pix-00-22000.ckpt \
-    --dump_path /home/zmh/SAM3-Video-Editor/instruct-pix2pix/diffusers_model
+    --dump_path ./instruct-pix2pix/diffusers_model
   ```
   *(注意：转换时需要加载 CLIP 模型，如果无法联网，请确保本地有 `clip-vit-large-patch14` 权重并修改转换脚本指向本地)*
 
@@ -71,11 +71,11 @@ pip install "numpy==1.26"
 
 在运行全视频编辑前，强烈建议先在单张图片或视频第一帧上调试 Prompt 和参数。
 
-**脚本**: `single_frame_edit.py`
+**脚本**: `scripts/single_frame_edit.py`
 
 ### 3.1 运行命令示例
 ```bash
-python single_frame_edit.py \
+python scripts/single_frame_edit.py \
   --input "examples/b64b82ca-afb4-4894-856f-6dd1a7618492.png" \
   --mask-prompt "yellow dress" \
   --edit-prompt "make the yellow dress red, keep its origin style" \
@@ -100,11 +100,11 @@ python single_frame_edit.py \
 
 确认单帧效果后，使用此脚本进行全视频处理。脚本会自动利用所有可用 GPU (如 8x3090) 进行加速。
 
-**脚本**: `examples/edit_video_distributed.py`
+**脚本**: `scripts/edit_video_distributed.py`
 
 ### 4.1 运行命令示例
 ```bash
-python examples/edit_video_distributed.py \
+python scripts/edit_video_distributed.py \
   --input examples/rgb.mp4 \
   --output outputs/final_video.mp4 \
   --mask-prompt "hair" \

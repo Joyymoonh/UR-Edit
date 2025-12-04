@@ -24,22 +24,6 @@ from accelerate import Accelerator
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # 注意：这里直接导入 sam3 的 predictor
 from sam3.sam3.model.sam3_video_predictor import Sam3VideoPredictor
-# 导入单图 Predictor 用于初始化
-from src.sam3_masking import SAM3Predictor
-
-
-def sample_points_from_mask(mask, num_points=5):
-    """从二值 Mask 中采样前景点"""
-    y_indices, x_indices = np.where(mask > 0)
-    if len(y_indices) == 0:
-        return None
-    
-    # 随机选择索引
-    indices = np.random.choice(len(y_indices), size=min(len(y_indices), num_points), replace=False)
-    points = []
-    for idx in indices:
-        points.append([float(x_indices[idx]), float(y_indices[idx])]) # [x, y]
-    return points
 
 def save_frames_to_temp(frames, temp_dir="temp_frames"):
     """保存帧到临时目录供 SAM3 Video Predictor 使用"""
@@ -106,29 +90,7 @@ def main():
     print(f"总帧数: {len(frames)}")
     
     # 3. SAM3 视频跟踪 (Running on GPU0)
-    print(f"\n[阶段 1] 使用 SAM3 单图模式分割第一帧: '{args.mask_prompt}'")
-    
-    # 3.1 先用单图模型搞定第一帧
-    sam_single = SAM3Predictor(checkpoint_path=args.sam_path, device="cuda:0")
-    first_mask_tensor = sam_single.generate_mask(frames[0], args.mask_prompt)
-    # mask tensor: (1, 1, H, W) -> numpy (H, W)
-    first_mask_np = first_mask_tensor.cpu().numpy()[0, 0]
-    
-    # 检查是否检测到物体
-    if first_mask_np.max() == 0:
-        print("错误: 第一帧未检测到目标物体！请检查 mask-prompt。")
-        sys.exit(1)
-        
-    # 采样点
-    points = sample_points_from_mask(first_mask_np, num_points=5)
-    print(f"从第一帧 Mask 采样了 {len(points)} 个前景点")
-    
-    # 释放单图模型
-    del sam_single
-    torch.cuda.empty_cache()
-    
-    
-    print(f"\n[阶段 2] 初始化 SAM3 Video Predictor 进行跟踪")
+    print(f"\n[阶段 1] 初始化 SAM3 Video Predictor 进行纯文本跟踪")
     
     # 保存帧到临时目录
     temp_frames_dir = save_frames_to_temp(frames)
@@ -145,21 +107,12 @@ def main():
         session = sam_predictor.start_session(resource_path=temp_frames_dir)
         session_id = session["session_id"]
         
-        # 策略：分两次添加 Prompt
-        print(f"Step 1: 使用文本提示初始化 @ Frame 0")
+        # 直接使用文本提示初始化
+        print(f"使用文本提示进行初始化: '{args.mask_prompt}' @ Frame 0")
         sam_predictor.add_prompt(
             session_id=session_id,
             frame_idx=0,
             text=args.mask_prompt,
-            obj_id=1
-        )
-        
-        print(f"Step 2: 使用采样点修正 Mask @ Frame 0")
-        sam_predictor.add_prompt(
-            session_id=session_id,
-            frame_idx=0,
-            points=points,
-            point_labels=[1] * len(points), # 1 表示前景点
             obj_id=1
         )
         
