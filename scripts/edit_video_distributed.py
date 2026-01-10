@@ -5,36 +5,48 @@
 使用 Diffusers + Accelerate 实现模型并行，支持全分辨率编辑
 集成 SAM3 Video Tracking 实现全视频智能跟踪
 增强：支持 Mask 腐蚀与局部 Mask 融合 (Crop-Edit-Paste with Mask)
+
+注意：核心逻辑已提取到 edit_video_distributed_core.py
+此脚本保持向后兼容，可以直接通过命令行使用
 """
 
 import argparse
-import torch
-import cv2
-import os
-import numpy as np
-import shutil
-import glob
 import sys
-from PIL import Image, ImageFilter
-from tqdm import tqdm
-from diffusers import StableDiffusionInstructPix2PixPipeline, EulerAncestralDiscreteScheduler
-from accelerate import Accelerator
+from pathlib import Path
 
-# 导入 SAM3
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-# 注意：这里直接导入 sam3 的 predictor
-from sam3.sam3.model.sam3_video_predictor import Sam3VideoPredictor
+import os
+import sys
 
-def save_frames_to_temp(frames, temp_dir="temp_frames"):
-    """保存帧到临时目录供 SAM3 Video Predictor 使用"""
-    if os.path.exists(temp_dir):
-        shutil.rmtree(temp_dir)
-    os.makedirs(temp_dir)
+# 添加项目根目录到路径
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
+
+# 尝试使用新的核心模块（如果可用）
+try:
+    from scripts.edit_video_distributed_core import process_video_edit
+    USE_CORE_MODULE = True
+except ImportError:
+    USE_CORE_MODULE = False
+    # 如果导入失败，使用旧代码（向后兼容）
+    import torch
+    import cv2
+    import numpy as np
+    import shutil
+    from PIL import Image, ImageFilter
+    from tqdm import tqdm
+    from diffusers import StableDiffusionInstructPix2PixPipeline, EulerAncestralDiscreteScheduler
+    from sam3.sam3.model.sam3_video_predictor import Sam3VideoPredictor
     
-    print(f"保存帧到临时目录: {temp_dir}")
-    for i, frame in enumerate(tqdm(frames, desc="Saving frames")):
-        frame.save(os.path.join(temp_dir, f"{i:05d}.jpg"), quality=100)
-    return temp_dir
+    def save_frames_to_temp(frames, temp_dir="temp_frames"):
+        """保存帧到临时目录供 SAM3 Video Predictor 使用"""
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
+        os.makedirs(temp_dir)
+        
+        print(f"保存帧到临时目录: {temp_dir}")
+        for i, frame in enumerate(tqdm(frames, desc="Saving frames")):
+            frame.save(os.path.join(temp_dir, f"{i:05d}.jpg"), quality=100)
+        return temp_dir
 
 def main():
     parser = argparse.ArgumentParser(description="分布式高清视频编辑器")
@@ -51,6 +63,30 @@ def main():
     parser.add_argument("--erode-kernel", type=int, default=0, help="Mask腐蚀大小，用于收缩边缘保护背景 (推荐 5-15)")
     args = parser.parse_args()
 
+    # 如果可以使用新的核心模块，使用它（更简洁，支持状态回调）
+    if USE_CORE_MODULE:
+        from pathlib import Path
+        process_video_edit(
+            input_video_path=Path(args.input),
+            output_video_path=Path(args.output),
+            mask_prompt=args.mask_prompt,
+            edit_prompt=args.edit_prompt,
+            max_frames=args.max_frames,
+            num_inference_steps=args.steps,
+            image_guidance_scale=args.image_guidance_scale,
+            guidance_scale=args.guidance_scale,
+            erode_kernel=args.erode_kernel,
+            apply_smoothing=True,  # 默认启用
+            smoothing_window=5,
+            smoothing_alpha=0.3,
+            status_callback=None,  # 命令行模式不使用状态回调
+            log_file=None,
+            model_path=args.model_path,
+            sam_path=args.sam_path,
+        )
+        return
+
+    # 旧代码（向后兼容）
     print("=" * 60)
     print("  分布式高清视频编辑器 v2.0 (Crop-Edit-Paste + Mask Fusion)")
     print("=" * 60)
